@@ -871,6 +871,8 @@ async def _write_parent_ingest_document(
         "uploaded_at": datetime.now(UTC).isoformat(),
         "ingest_ms": ingest_ms,
         "agent_id": request.agent_id,
+        "source_doc_id": request.source_doc_id,
+        "ts_valid_start": request.ts_valid_start.isoformat() if request.ts_valid_start else None,
     }
     summary = _summarize_batch_for_embedding(survivors)
     if summary is not None:
@@ -1040,6 +1042,8 @@ async def ingest_commit(request: IngestCommitRequest) -> dict:
             }
             if request.doc_hash:
                 metadata["doc_hash"] = request.doc_hash
+            if request.source_doc_id:
+                metadata["source_doc_id"] = request.source_doc_id
             salience_value = getattr(fact, "salience", None)
             if salience_value is not None:
                 metadata["salience"] = salience_value
@@ -1050,6 +1054,10 @@ async def ingest_commit(request: IngestCommitRequest) -> dict:
                     source_uri=effective_source,
                     run_id=run_id,
                     metadata=metadata,
+                    # Explicit source timestamp wins over enrichment's
+                    # content-inferred value (bulk path only fills
+                    # ts_valid_start from enrichment when it's None).
+                    ts_valid_start=request.ts_valid_start,
                 )
             )
         bulk_data = BulkMemoryCreate(
