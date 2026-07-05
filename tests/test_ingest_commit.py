@@ -534,6 +534,53 @@ async def test_text_input_fallback_when_neither_set(captured):
 
 
 # ---------------------------------------------------------------------------
+# Fact-dense documents — bulk writes split at BULK_MAX_ITEMS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_over_bulk_cap_splits_into_chunks(captured):
+    """>100 facts (real wiki pages hit 115-194) must split into
+    ≤BULK_MAX_ITEMS bulk calls instead of 500ing on BulkMemoryCreate's
+    own validator. Chunk 0 keeps the bare run_id attempt key
+    (pre-split contract); later chunks append #<n>."""
+    from core_api.constants import BULK_MAX_ITEMS
+
+    n_facts = BULK_MAX_ITEMS + 50
+    req = _request("t1", *[f"fact number {i}" for i in range(n_facts)], run_id="run-big")
+    result = await ingest_service.ingest_commit(request=req)
+
+    assert result["memories_created"] == n_facts
+    assert len(captured.writes) == n_facts
+    assert [len(b.items) for b in captured.bulk_calls] == [BULK_MAX_ITEMS, 50]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_chunk_attempt_ids_deterministic(captured, monkeypatch):
+    """Retrying the same run re-derives identical per-chunk attempt ids
+    so already-committed chunks dedup as duplicate_attempt."""
+    from core_api.services import ingest_service as svc
+
+    attempt_ids: list[str] = []
+    real_bulk = svc.create_memories_bulk
+
+    async def spy(data, *, bulk_attempt_id):
+        attempt_ids.append(bulk_attempt_id)
+        return await real_bulk(data, bulk_attempt_id=bulk_attempt_id)
+
+    monkeypatch.setattr(svc, "create_memories_bulk", spy)
+    from core_api.constants import BULK_MAX_ITEMS
+
+    n_facts = 2 * BULK_MAX_ITEMS + 1
+    req = _request("t1", *[f"unique fact {i}" for i in range(n_facts)], run_id="run-big")
+    await ingest_service.ingest_commit(request=req)
+
+    assert attempt_ids == ["run-big", "run-big#1", "run-big#2"]
+
+
+# ---------------------------------------------------------------------------
 # A0.1 — source-document provenance (source_doc_id + ts_valid_start)
 # ---------------------------------------------------------------------------
 
