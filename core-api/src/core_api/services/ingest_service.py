@@ -1071,10 +1071,7 @@ async def ingest_commit(request: IngestCommitRequest) -> dict:
         created = 0
         skipped_in_loop = 0
         errored = 0
-        chunks = [
-            bulk_items[i : i + BULK_MAX_ITEMS]
-            for i in range(0, len(bulk_items), BULK_MAX_ITEMS)
-        ]
+        chunks = [bulk_items[i : i + BULK_MAX_ITEMS] for i in range(0, len(bulk_items), BULK_MAX_ITEMS)]
         for chunk_index, chunk in enumerate(chunks):
             bulk_data = BulkMemoryCreate(
                 tenant_id=request.tenant_id,

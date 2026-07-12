@@ -1393,9 +1393,7 @@ class PostgresService:
             # explicit-``status_filter`` override applies for inspection.
             scored_stmt = scored_stmt.where(
                 or_(
-                    Memory.status.notin_(
-                        ("outdated", "conflicted", "archived", "cancelled")
-                    ),
+                    Memory.status.notin_(("outdated", "conflicted", "archived", "cancelled")),
                     and_(Memory.status == "conflicted", _exact_lexical_match),
                 )
             )
