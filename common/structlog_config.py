@@ -304,7 +304,15 @@ def _add_dd_trace_context(
     """
     if _dd_tracer is None:
         return event_dict
-    ctx = _dd_tracer.get_log_correlation_context()
+    # This processor runs on EVERY log call. ddtrace's helper is safe in normal
+    # operation, but a tracer-side raise (shutdown, forked-process re-init, an
+    # internal ddtrace bug) must never propagate out of the logging chain — it
+    # would drop the log line (or surface as a 500 in FastAPI), masking the very
+    # error worth seeing. Fail open to an un-annotated log.
+    try:
+        ctx = _dd_tracer.get_log_correlation_context()
+    except Exception:
+        return event_dict
     # "0" is ddtrace's sentinel for "no active span". Read both keys defensively
     # (.get) and require both present and non-zero: never stamp a log with a
     # trace ID but no span ID (Datadog can't correlate that), and never KeyError

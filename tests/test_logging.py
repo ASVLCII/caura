@@ -194,6 +194,19 @@ def test_add_dd_trace_context_skips_partial_context(monkeypatch) -> None:
     assert "dd.span_id" not in result
 
 
+def test_add_dd_trace_context_fails_open_when_tracer_raises(monkeypatch) -> None:
+    # This processor runs on every log call; a tracer-side raise (shutdown,
+    # forked process, ddtrace bug) must never break the logging chain — the
+    # event dict passes through untouched rather than dropping the log line.
+    class _RaisingTracer:
+        def get_log_correlation_context(self) -> dict[str, str]:
+            raise RuntimeError("tracer unavailable")
+
+    monkeypatch.setattr(structlog_config, "_dd_tracer", _RaisingTracer())
+    result = _add_dd_trace_context(None, "info", {"event": "x"})
+    assert result == {"event": "x"}
+
+
 def test_rename_event_to_message_moves_field() -> None:
     result = _rename_event_to_message(
         None, "info", {"event": "hello world", "extra": 1}
