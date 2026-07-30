@@ -1,7 +1,7 @@
 # Claude Code Review
 #
-# Runs automatically when a PR is opened/reopened by a public member of
-# the ``caura-ai`` organization. Re-trigger after pushing changes by
+# Runs automatically when a PR is opened/reopened by a member of the
+# ``caura-ai`` organization. Re-trigger after pushing changes by
 # commenting "@claude" on the PR (also restricted to org members).
 #
 # Why org-only: this workflow consumes ``ANTHROPIC_API_KEY`` and burns
@@ -10,13 +10,25 @@
 # members makes the policy explicit and stops fork PRs from triggering
 # silent-failure runs.
 #
-# Membership is checked at runtime against ``orgs/caura-ai/members/{user}``
-# (returns 204 for visible members, 404 otherwise). The ``pull_request``
-# event's ``author_association`` field is captured at PR-creation time
-# and never refreshes, so a member whose visibility was PRIVATE when
-# they opened a PR would be permanently locked out — the live API call
-# avoids that. Members must still make their org membership public for
-# the API to return 204.
+# Membership is read from the event payload's ``author_association``,
+# accepting ``MEMBER`` and ``OWNER``. Both the on-open review and the
+# ``@claude`` retrigger use that one field, so the two paths cannot
+# disagree about who counts as a member.
+#
+# This is a correction. The gate previously called
+# ``orgs/caura-ai/members/{user}`` at runtime, on the belief that
+# ``author_association`` reported ``NONE`` for members whose org
+# membership is private. It does not — a private member reports
+# ``MEMBER``, verified on live payloads here. The API call, meanwhile,
+# answers for its caller, and ``GITHUB_TOKEN`` sees only PUBLIC members:
+# it returned 404 for every maintainer, so the on-open review was skipped
+# on every human pull request while retriggers kept working. Requiring
+# public org membership to get a code review was not a deliberate policy;
+# it was a consequence of that wrong belief.
+#
+# What the payload field genuinely costs: it is computed when the event
+# fires, not when the review runs, so a member removed from the org in
+# between is still honoured. Reopening a pull request recomputes it.
 
 name: Claude Code Review
 
@@ -85,34 +97,44 @@ jobs:
           PR_ACTION: ${{ github.event.action }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
           PR_ACTOR: ${{ github.actor }}
-          ORG: caura-ai
+          PR_AUTHOR_ASSOC: ${{ github.event.pull_request.author_association }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
 
-          # 1. Org membership gate — checked at runtime, not via the
-          # webhook-frozen ``author_association`` field. The payload
-          # captures membership at PR-creation time, so a user whose
-          # caura-ai membership was PRIVATE at PR-open shows up as
-          # ``NONE`` even after they make it public. The ``orgs/{org}/
-          # members/{user}`` endpoint returns 204 for visible members
-          # and 404 for private members + non-members. We distinguish
-          # 404 (skip with the membership reason) from other failures
-          # (rate-limit, network, bad token — skip but log a warning so
-          # operators can tell a real "non-member" from a transient
-          # API hiccup).
-          MEMBERSHIP_STATUS=$(gh api "orgs/${ORG}/members/${PR_ACTOR}" \
-            -i 2>&1 | grep -m1 -E '^HTTP/' | awk '{print $2}')
-          if [[ "$MEMBERSHIP_STATUS" == "204" ]]; then
-            : # member — proceed
-          elif [[ "$MEMBERSHIP_STATUS" == "404" ]]; then
+          # 1. Org membership gate, read from the event payload's
+          # ``author_association`` — the same field, and the same accepted
+          # values, as the ``claude-retrigger`` job. One mechanism for one
+          # policy: two ways of deciding "is this an org member" is exactly
+          # the drift this pipeline exists to remove.
+          #
+          # This replaces a runtime ``orgs/{org}/members/{user}`` call that
+          # silently disabled the on-open review entirely. That endpoint
+          # answers for the CALLER: with ``GITHUB_TOKEN`` it sees only PUBLIC
+          # members, returning 404 for a private member exactly as for a
+          # stranger. Every maintainer's caura-ai membership is private, so
+          # rule 1 skipped every human pull request — while ``@claude``
+          # retriggers kept working, because that path already used
+          # ``author_association``. Verified on live payloads in this repo:
+          # private members report ``MEMBER``, and an outside contributor
+          # reports ``FIRST_TIME_CONTRIBUTOR``, so the field still
+          # discriminates. The comment this replaces claimed private members
+          # surface as ``NONE``; that is not what GitHub does.
+          #
+          # ``COLLABORATOR`` stays excluded, as in claude-retrigger: the
+          # policy is "members of our org", which is stricter than repo
+          # write access. Bots are not ``MEMBER`` either, so they remain
+          # skipped here regardless of rule 4.
+          #
+          # The trade, stated: this field is computed when the event fires,
+          # so it reflects membership at that moment rather than at review
+          # time — a member removed from the org between opening a pull
+          # request and the review running would still be honoured. The
+          # rejected alternative reflected review time but did not work at
+          # all, and retrigger already accepts this same trade.
+          if [[ ! "${PR_AUTHOR_ASSOC:-}" =~ ^(MEMBER|OWNER)$ ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "reason=PR author '${PR_ACTOR}' is not a public member of the '${ORG}' org" >> "$GITHUB_OUTPUT"
-            exit 0
-          else
-            echo "::warning::Org membership API returned HTTP ${MEMBERSHIP_STATUS:-?} for '${PR_ACTOR}' — skipping review as a precaution"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "reason=Org membership API returned unexpected status ${MEMBERSHIP_STATUS:-?} for '${PR_ACTOR}'" >> "$GITHUB_OUTPUT"
+            echo "reason=PR author '${PR_ACTOR}' is not a caura-ai org member (author_association: ${PR_AUTHOR_ASSOC:-unset})" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -238,9 +260,13 @@ jobs:
         run: |
           # ``author_association`` is set by GitHub on the event payload
           # and reflects the commenter's relationship to the repo's
-          # owner organization. ``MEMBER`` = public org member,
-          # ``OWNER`` = org owner. PRIVATE org members surface as
-          # ``NONE`` — see header comment for the workaround.
+          # owner organization. ``MEMBER`` = org member, ``OWNER`` = org
+          # owner. Membership VISIBILITY does not affect it: a private
+          # member reports ``MEMBER``, verified on live payloads in this
+          # repo. (An earlier version of this comment claimed private
+          # members surface as ``NONE``. They do not, and that claim is
+          # what pushed the on-open review onto an API call that could
+          # not see private members at all.)
           #
           # ``COLLABORATOR`` (non-org members granted direct repo write
           # access via Settings → Collaborators) is INTENTIONALLY
