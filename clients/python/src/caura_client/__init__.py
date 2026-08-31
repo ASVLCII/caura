@@ -17,6 +17,7 @@ from .exceptions import (
     MemClawAPIError,
     MemClawError,
     NotFoundError,
+    RateLimitError,
 )
 from .models import Memory, RecallResult
 
@@ -31,6 +32,7 @@ __all__ = [
     "MemClawAPIError",
     "AuthError",
     "NotFoundError",
+    "RateLimitError",
     "DEFAULT_BASE_URL",
 ]
 
