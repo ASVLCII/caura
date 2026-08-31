@@ -10,6 +10,21 @@ Only the most recent releases are listed below. Every release, including those
 no longer shown here, is published with its full notes at
 [github.com/caura-ai/caura/releases](https://github.com/caura-ai/caura/releases).
 
+## [2.37.2](https://github.com/caura-ai/caura/compare/backend-v2.37.1...backend-v2.37.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **agent:** bind search-profile reset to tenant ([#1126](https://github.com/caura-ai/caura/issues/1126)) ([f1c4d02](https://github.com/caura-ai/caura/commit/f1c4d02b6d59088db483e42d967888b39813c035)), closes [#1089](https://github.com/caura-ai/caura/issues/1089)
+* **fleet:** keep the primary key out of the node upsert's conflict path ([#1129](https://github.com/caura-ai/caura/issues/1129)) ([3998e2d](https://github.com/caura-ai/caura/commit/3998e2dfa7771970722479ca02d88561b41368d1))
+
+
+### Documentation
+
+* **plugin:** correct legacy floor classifications ([#1128](https://github.com/caura-ai/caura/issues/1128)) ([51c33d9](https://github.com/caura-ai/caura/commit/51c33d9fceafd78880b214498dcae472ed00ac99))
+* **storage:** verify opaque-body tenant bindings ([#1125](https://github.com/caura-ai/caura/issues/1125)) ([24aea6c](https://github.com/caura-ai/caura/commit/24aea6c1f0831ef310ea0cdd884525529ed505c6))
+* **sunset:** record lifecycle subscription drain evidence ([#1136](https://github.com/caura-ai/caura/issues/1136)) ([12cc130](https://github.com/caura-ai/caura/commit/12cc13004ba7ad85f8d8cf0d2db09c1a253a57c5))
+
 ## [2.37.1](https://github.com/caura-ai/caura/compare/backend-v2.37.0...backend-v2.37.1) (2026-08-30)
 
 
